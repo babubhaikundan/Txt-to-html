@@ -1300,6 +1300,7 @@ var lastSaveTime    = 0;
 var autoNextTimer   = null;
 var autoNextTarget  = null;
 var lastErrorUrl    = null;
+var _nativeTriedUrl  = null;  // HLS fail hone par native fallback sirf ek baar
 var renderedSubjects = {};  
 var globalLectureIdx = 0;   
 var starredSet       = new Set();
@@ -1900,6 +1901,7 @@ function playVideo(event, element) {
   _destroyPlayer();
   hideError();
   lastErrorUrl = url;
+  _nativeTriedUrl = null;
 
   if (currentlyPlayingBtn) currentlyPlayingBtn.classList.remove('playing');
   element.classList.add('playing');
@@ -2005,7 +2007,9 @@ function _attachEvents(startTime) {
 
   player.on('error', function (event) {
     setLoading(false);
-    showError('Video nahi chal saki. Direct link se dekh lo ya link sahi hai check karo.');
+    var _me = player && player.media && player.media.error;
+    showError('Video nahi chal saki' + (_me ? ' [media error ' + _me.code + ']' : '') +
+              '. Direct link se dekh lo ya link sahi hai check karo.');
     showToast('Playback error', 'error');
   });
 }
@@ -2091,12 +2095,26 @@ function loadNewVideo(url, startTime) {
 
     hlsInstance.on(Hls.Events.ERROR, function (event, data) {
       if (data.fatal) {
-        setLoading(false);
-        // HLS ko destroy karo, error dikhao, direct link de do
+        var _code   = (data.response && data.response.code) ? ' HTTP ' + data.response.code : '';
+        var _detail = (data.details || data.type || 'unknown') + _code;
+        try { console.warn('HLS fatal error:', data); } catch (e) {}
         try { hlsInstance.destroy(); } catch (e) {}
         hlsInstance = null;
-        showError('Video load nahi ho saki. Direct link se khol kar dekh lo.');
-        showToast('Stream error', 'error');
+
+        /* Manifest/network fail (CORS ya hls.js issue) -> browser ke native HLS se ek baar try.
+           <video src> par CORS lagta nahi, isliye Android Chrome par aksar chal jata hai. */
+        if (!player && _nativeTriedUrl !== url) {
+          _nativeTriedUrl = url;
+          showToast('HLS fail (' + _detail + ') \u2014 native player try kar raha hoon\u2026', 'warn', 2600);
+          videoEl.src = url;
+          player = new Plyr(videoEl, plyrOpts);
+          _attachEvents(startTime);
+          return;
+        }
+
+        setLoading(false);
+        showError('Video load nahi ho saki [' + _detail + ']. Direct link se khol kar dekh lo.');
+        showToast('Stream error: ' + _detail, 'error');
       }
     });
 
@@ -2811,7 +2829,7 @@ def generate_html(file_name: str, structured_list: list) -> str:
 
         '<script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>',
         
-        '<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>',
+        '<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>',
         f'<script>var LECTURES = {_json.dumps(_lectures_to_json(structured_list), ensure_ascii=False)};</script>',
         f'<script>{js}</script>',
         '</body>',
