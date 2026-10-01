@@ -361,7 +361,7 @@ def _build_content_html(structured: list) -> str:
         total = len(direct) + sum(len(t["lectures"]) for t in topics.values())
 
         # direct lectures ka khaali container
-        direct_container = f'<div id="direct-{sub_idx}" class="topic-content"></div>' if direct else ''
+        direct_container = f'<div id="direct-{sub_idx}" class="topic-content direct-content"></div>' if direct else ''
 
         # topic buttons with empty content div
         topic_buttons = []
@@ -385,13 +385,13 @@ def _build_content_html(structured: list) -> str:
         parts.append(
             f'<div class="accordion-item">'
             f'<button class="accordion-header" aria-expanded="false"'
-            f' aria-controls="ac-{escaped_sname}" data-subidx="{sub_idx}">'
+            f' aria-controls="ac-{sub_idx}" data-subidx="{sub_idx}">'
             f'<span class="sub-name">{html.escape(sname)}</span>'
             f'<span class="sub-count" aria-label="{total} lectures">{total}</span>'
             f'<span class="sub-progress" aria-live="polite"></span>'
             f'<span class="acc-arrow" aria-hidden="true">&#43;</span>'
             f'</button>'
-            f'<div class="accordion-content" id="ac-{escaped_sname}">'
+            f'<div class="accordion-content" id="ac-{sub_idx}">'
             f'{"".join(topic_buttons)}{direct_container}'
             f'</div>'
             f'</div>'
@@ -425,8 +425,8 @@ html.dark {
 
 /* ── Reset & Base ── */
 *{margin:0;padding:0;box-sizing:border-box;}
-html{scroll-behavior:smooth;}
-body{
+html{scroll-behavior:smooth;overflow-x:hidden;}
+body{overflow-x:hidden;max-width:100%;
   background:var(--bg);color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,sans-serif;
   font-size:15px;line-height:1.5;
@@ -550,6 +550,12 @@ body{
 .open-link-btn:hover{background:rgba(255,255,255,.22);}
 
 .plyr{border-radius:var(--radius);}
+/* Plyr init se pehle native <video> bhi poori width + 16:9 le */
+.player-wrapper{width:100%;max-width:100%;min-width:0;}
+.player-wrapper > video{
+  display:block;width:100%;max-width:100%;
+  aspect-ratio:16/9;background:#000;object-fit:contain;
+}
 
 /* Now playing */
 .now-playing{
@@ -722,6 +728,8 @@ html.dark .topic-header.active{background:#0369a1;}
   transition:max-height .35s cubic-bezier(.4,0,.2,1);
   padding:0 4px;
 }
+/* direct (topic-less) lectures: hamesha visible, max-height:0 se hide nahi hona chahiye */
+.topic-content.direct-content{max-height:none;overflow:visible;}
 
 /* ── Lecture Row ── */
 .lecture-entry{
@@ -1117,7 +1125,10 @@ _DRAWER_CSS = """
   box-shadow:-12px 0 48px rgba(0,0,0,.6);
   border-left:1px solid rgba(255,255,255,.07);overflow-y:auto;
 }
-.kk-drawer-nav.open{transform:translateX(0);}
+.kk-drawer-nav{visibility:hidden;box-shadow:none;
+  transition:transform .5s cubic-bezier(.77,0,.175,1),visibility 0s linear .5s,box-shadow 0s linear .5s;}
+.kk-drawer-nav.open{transform:translateX(0);visibility:visible;box-shadow:-12px 0 48px rgba(0,0,0,.6);
+  transition:transform .5s cubic-bezier(.77,0,.175,1),visibility 0s,box-shadow 0s;}
 .kk-drawer-header{
   padding:26px 26px 18px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;
 }
@@ -1939,8 +1950,8 @@ function _openParentAccordions(entry) {
       ah.classList.add('active');
       ah.setAttribute('aria-expanded', 'true');
       accContent.classList.add('open');
-      accContent.style.maxHeight = accContent.scrollHeight + 'px';
     }
+    accContent.style.maxHeight = 'none';
   }
 }
 
@@ -2021,6 +2032,21 @@ function loadNewVideo(url, startTime) {
   };
 
   var isHLS = url.indexOf('.m3u8') !== -1;
+
+  /* Plyr CDN load nahi hua (offline/blocked) -> native controls se chala do */
+  if (typeof Plyr === 'undefined') {
+    videoEl.controls = true;
+    if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {
+      hlsInstance = new Hls();
+      hlsInstance.loadSource(url);
+      hlsInstance.attachMedia(videoEl);
+    } else {
+      videoEl.src = url;
+    }
+    setLoading(false);
+    videoEl.play().catch(function () {});
+    return;
+  }
 
   if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {
     hlsInstance = new Hls({
@@ -2367,8 +2393,8 @@ function _initAccordions() {
             subHeader.classList.add('active');
             subHeader.setAttribute('aria-expanded', 'true');
             pc.classList.add('open');
-            pc.style.maxHeight = 'none';
           }
+          pc.style.maxHeight = 'none';
         }
       } else {
         btn.classList.remove('active');
